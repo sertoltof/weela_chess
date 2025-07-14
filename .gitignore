@@ -1,0 +1,7 @@
+.idea/
+**/data/
+
+**stockfish/
+
+**.tar
+**.keras
