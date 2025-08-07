@@ -1,0 +1,134 @@
+import asyncio
+import sys
+
+# sys.path.append("../../")
+
+import os
+from typing import Callable, Iterable, AsyncIterable
+
+import numpy as np
+from pathlib import Path
+from tqdm import tqdm
+import json
+
+# from keras.api.layers import Flatten, Conv2D, Dense
+# from keras.api.optimizers import Adam
+
+from chess import Board
+from chess import pgn
+from chess.pgn import Game
+
+# import tensorflow as tf
+
+from weela_chess.data_io.convert_pgn_to_np import board_to_matrix
+import chess.engine
+
+
+def predict_next_move(model, board, int_to_move: dict[int, str]):
+    board_matrix = board_to_matrix(board).reshape(1, 8, 8, 12)
+    predictions = model.predict(board_matrix)[0]
+    legal_moves = list(board.legal_moves)
+    legal_moves_uci = [move.uci() for move in legal_moves]
+    sorted_indices = np.argsort(predictions)[::-1]
+    for move_index in sorted_indices:
+        move = int_to_move[move_index]
+        if move in legal_moves_uci:
+            return move
+    return None
+
+
+PLAYER_FUNC = Callable[[Board], str]
+
+
+# given a board, returns a ranked list of uci codes
+
+async def play_against_stockfish(player: PLAYER_FUNC) -> tuple[int, bool]:
+    play_iter = iter(play_against_stockfish_iter(player))
+
+    move_num, winner = 0, None
+    while True:
+        board = next(play_iter)
+        if board.is_game_over():
+            winner = "me"
+            break
+
+        board = next(play_iter)
+        if board.is_game_over():
+            winner = "stockfish"
+            break
+
+        move_num += 1
+    return move_num, winner == "me"
+
+async def play_against_stockfish_iter(player: PLAYER_FUNC) -> Iterable[Board]:
+    transport, engine = await chess.engine.popen_uci("/home/garrickw/rl_learning/weela_chess/stockfish/stockfish/stockfish-ubuntu-x86-64-avx2")
+    board = Board()
+    limit = chess.engine.Limit(time=0.01)
+
+    while not board.is_game_over():
+        next_move = player(board)
+        board.push_uci(next_move)
+        yield board
+
+        if board.is_game_over():
+            break
+
+        next_stockfish_move = await engine.play(board, limit)
+        board.push(next_stockfish_move.move)
+        yield board
+
+        if board.is_game_over():
+            break
+
+async def play_stockfish_against_self() -> AsyncIterable[Board]:
+    transport, engine = await chess.engine.popen_uci("/home/garrickw/rl_learning/weela_chess/stockfish/stockfish/stockfish-ubuntu-x86-64-avx2")
+    board = Board()
+    limit = chess.engine.Limit(time=0.01)
+
+    while not board.is_game_over():
+        next_move = await engine.play(board, limit)
+        board.push(next_move.move)
+        yield board
+
+        if board.is_game_over():
+            break
+
+        next_stockfish_move = await engine.play(board, limit)
+        board.push(next_stockfish_move.move)
+        yield board
+
+        if board.is_game_over():
+            break
+
+async def main():
+    # model = load_model(
+    #     "/home/gerk/sts_after_images/weela_chess_recreate/src/weela_chess/nick_youtube_tute/chess_model.keras")
+    transport, engine = await chess.engine.popen_uci(
+        "/home/gerk/sts_after_images/weela_chess_recreate/sandbox/stockfish/stockfish-ubuntu-x86-64-avx2")
+    board = Board()
+    limit = chess.engine.Limit(time=0.2)
+
+    move_num = 0
+    while not board.is_game_over():
+        print(f"Making my move num {move_num}")
+        next_move = predict_next_move(model, board, int_to_move)
+        board.push_uci(next_move)
+
+        # pshhh, as if
+        if board.is_game_over():
+            break
+
+        print(f"Stockfish moving num {move_num}")
+        next_stockfish_move = await engine.play(board, limit)
+        board.push(next_stockfish_move.move)
+        move_num += 1
+    await engine.quit()
+
+
+if __name__ == '__main__':
+    data_dir = Path("/home/gerk/sts_after_images/lichess_elite_np_db")
+
+    int_to_move = json.loads((data_dir / "int_to_move.json").read_text())
+    int_to_move = {int(k): v for k, v in int_to_move.items()}
+
+    asyncio.run(main())

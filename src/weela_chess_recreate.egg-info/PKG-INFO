@@ -1,0 +1,24 @@
+Metadata-Version: 2.4
+Name: weela-chess-recreate
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: chess>=1.11.1
+Requires-Dist: jupyter>=1.1.1
+Requires-Dist: jupytext>=1.16.6
+Requires-Dist: more-itertools>=10.6.0
+Requires-Dist: numpy==1.*
+Requires-Dist: pydantic>=2.10.6
+Requires-Dist: tqdm>=4.67.1
+Requires-Dist: lmdb>=1.6.2
+Requires-Dist: torch>=2.6.0
+Requires-Dist: torchvision>=0.21.0
+Requires-Dist: marimo>=0.14.12
+Requires-Dist: transformers>=4.54.1
+Requires-Dist: sentence-transformers>=5.0.0
+Requires-Dist: llama-index>=0.13.0
+Requires-Dist: llama-index-embeddings-huggingface>=0.6.0
+Requires-Dist: llama-index-llms-ollama>=0.7.0
+Dynamic: license-file

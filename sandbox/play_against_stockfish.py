@@ -1,7 +1,7 @@
 import asyncio
 import sys
 
-sys.path.append("../../")
+# sys.path.append("../../")
 
 import os
 import numpy as np

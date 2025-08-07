@@ -5,3 +5,9 @@
 
 **.tar
 **.keras
+**.pt
+
+**__pycache__/
+**.ipynb_checkpoints/
+
+**:Zone.Identifier

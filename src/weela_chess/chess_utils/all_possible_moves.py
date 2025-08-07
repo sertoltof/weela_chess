@@ -1,5 +1,6 @@
 # https://ai.stackexchange.com/questions/6069/how-do-you-encode-a-chess-move-in-a-neural-network/47973#47973
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from enum import Enum
 from typing import Literal, get_args
 
@@ -177,8 +178,14 @@ def all_uci_codes_to_categorical_idx() -> dict[str, int]:
             uci_codes_to_cat_idxs[uci_code] = i
     return uci_codes_to_cat_idxs
 
-def categorical_idx_to_uci_codes() -> dict[int, str]:
-    return {v: k for k, v in all_uci_codes_to_categorical_idx().items()}
+def categorical_idx_to_uci_codes() -> dict[int, list[str]]:
+    cat_idxs_to_uci_codes = defaultdict(list)
+    for i, move in enumerate(list_all_move_instructions()):
+        for uci_code in move.uci_code():
+            cat_idxs_to_uci_codes[i].append(uci_code)
+    return cat_idxs_to_uci_codes
+    # return {v: k for k, v in all_uci_codes_to_categorical_idx().items()}
 
-# all_moves = all_uci_codes_to_moves()
+# all_moves = all_uci_codes_to_categorical_idx()
+# idx_to_codes = categorical_idx_to_uci_codes()
 # print()
