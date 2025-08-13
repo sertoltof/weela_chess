@@ -60,7 +60,7 @@ class OllamaBoardStateConverter:
         self.ollama_model_name = ollama_model_name
         self.ollama_kwargs = ollama_kwargs
 
-    def describe_board(self, board: Board) -> list[str]:
+    def describe_board(self, board: Board) -> dict[str, str]:
         active_llm = Ollama(model=self.ollama_model_name, request_timeout=360.0, additional_kwargs=self.ollama_kwargs)
         board_prompt = """You are playing chess. I will describe the positions of each piece on the board and the state of the game.
         Output one sentence describing the most salient feature of the game state. Use the format 'SALIENT: <description>'
@@ -107,7 +107,7 @@ class OllamaBoardStateConverter:
                     keyword_response.append(word)
         if len(keyword_response) > 0:
             keyword_responses[current_keyword] = " ".join(keyword_response)
-        return list(keyword_responses.values())
+        return keyword_responses
 
 
 async def testing_converter():

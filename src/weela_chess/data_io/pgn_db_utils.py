@@ -27,11 +27,12 @@ def load_pgn(file: Path) -> Iterable[Game]:
 
 
 def pgn_file_streamer(pgn_dir: Path, repeat: bool = True,
-                      seed: int = 42) -> Iterable[Game]:
+                      seed: int | None = 42) -> Iterable[Game]:
     np_rand = np.random.default_rng(seed)
 
     files = np.array([file for file in pgn_dir.iterdir() if file.name.endswith(".pgn")])
-    np_rand.shuffle(files)
+    if seed is not None:
+        np_rand.shuffle(files)
 
     if repeat:
         files = cycle(files)
