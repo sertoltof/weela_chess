@@ -76,7 +76,7 @@ class OllamaBoardStateConverter:
                 white_pieces[PIECE_NAMES[piece.piece_type]].append(f"{col_names[col]}{row + 1}")
             else:
                 black_pieces[PIECE_NAMES[piece.piece_type]].append(f"{col_names[col]}{row + 1}")
-        board_state_text = f"{piece_state_texts(white_pieces, color_desc="white")}\n\n{piece_state_texts(black_pieces, color_desc="black")}"
+        board_state_text = f"{piece_state_texts(white_pieces, color_desc='white')}\n\n{piece_state_texts(black_pieces, color_desc='black')}"
 
         if board.turn:
             board_state_text += "\nIt is white's turn"
