@@ -69,6 +69,14 @@ def game_to_nn_inputs(game: Game, first_n_moves_only: int | None = None) -> tupl
     return np.array(x), np.array(y)
 
 
+def pgn_move_streamer(pgn_dir: Path,
+                      repeat: bool = True, seed: int = 42) -> Iterable[Board]:
+    for game in pgn_file_streamer(pgn_dir, repeat, seed):
+        board = game.board()
+        for move in game.mainline_moves():
+            yield board
+            board.push(move)
+
 def pgn_np_move_streamer(pgn_dir: Path,
                          repeat: bool = True, first_n_moves_only: int | None = None,
                          seed: int = 42) -> Iterable[tuple[np.ndarray, np.ndarray]]:

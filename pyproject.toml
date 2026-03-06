@@ -21,11 +21,17 @@ dependencies = [
     "llama-index>=0.13.0",
     "llama-index-embeddings-huggingface>=0.6.0",
     "llama-index-llms-ollama>=0.7.0",
+    "llama-index-core>=0.13.0",
 ]
 
 [build-system]
 requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
 
 #    "tensorflow[and-cuda]>=2.18.0",
 #    "torch<=2.4.0",

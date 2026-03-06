@@ -1,7 +1,8 @@
 import asyncio
 from collections import defaultdict
+from pathlib import Path
 
-from chess import Board, PIECE_NAMES
+from chess import Board, PIECE_NAMES, Piece
 from chess.pgn import Game
 from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
@@ -9,6 +10,8 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.ollama import Ollama
 
 from weela_chess.chess_utils.stockfish_eval import play_stockfish_against_self
+from weela_chess.data_io.pgn_db_utils import pgn_np_move_streamer, pgn_file_streamer, pgn_move_streamer
+from weela_chess.datasets.board_descript_preloader import prepare_move_descript_io_iter, board_descript_iter
 
 col_names = ["a", "b", "c", "d", "e", "f", "g", "h"]
 
@@ -49,25 +52,42 @@ def piece_state_texts(piece_to_coords: dict[str, list[str]], color_desc: str) ->
     return "\n".join(piece_state_texts)
 
 
+def load_description_cache_from_pgn_streamers(db_path: Path, board_descript_path: Path) -> dict[str, dict[str, str]]:
+    board_state_iter = pgn_move_streamer(db_path)
+    descript_iter = board_descript_iter(board_descript_path)
+    descript_cache = {}
+    for board, descript in zip(board_state_iter, descript_iter):
+        state_key = piece_map_key(board.piece_map())
+        descript_cache[state_key] = descript
+    return descript_cache
+
+
+def piece_map_key(piece_map: dict[int, Piece]) -> str:
+    key = ""
+    for square_num, piece in piece_map.items():
+        key += str(square_num)
+        key += "w" if piece.color else "b"
+        key += str(piece.piece_type)
+    return key
+
+
 class OllamaBoardStateConverter:
 
     def __init__(self, ollama_model_name: str, embed_model: BaseEmbedding = None,
+                 description_cache: dict[str, dict[str, str]] = None,
                  **ollama_kwargs):
         if embed_model is None:
             embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-base-en-v1.5")
         self.embed_model = embed_model
 
+        if description_cache is None:
+            description_cache = {}
+        self.description_cache = description_cache
+
         self.ollama_model_name = ollama_model_name
         self.ollama_kwargs = ollama_kwargs
 
-    def describe_board(self, board: Board) -> dict[str, str]:
-        active_llm = Ollama(model=self.ollama_model_name, request_timeout=360.0, additional_kwargs=self.ollama_kwargs)
-        board_prompt = """You are playing chess. I will describe the positions of each piece on the board and the state of the game.
-        Output one sentence describing the most salient feature of the game state. Use the format 'SALIENT: <description>'
-        Output a newline character, then a sentence describing the part of the game that the WHITE piece player should focus on. Use the format 'WHITE-FOCUS: <description>'
-        Output a newline character, then a sentence describing the part of the game that the BLACK piece player should focus on. Use the format 'BLACK-FOCUS': <description>'"""
-        board_prompt_msg = ChatMessage(role=MessageRole.SYSTEM, content=board_prompt)
-
+    def board_state_text(self, board: Board) -> str:
         white_pieces, black_pieces = defaultdict(list), defaultdict(list)
         piece_map = board.piece_map()
         for square, piece in piece_map.items():
@@ -82,6 +102,21 @@ class OllamaBoardStateConverter:
             board_state_text += "\nIt is white's turn"
         else:
             board_state_text += "\nIt is black's turn"
+        return board_state_text
+
+    def describe_board(self, board: Board) -> dict[str, str]:
+        state_key = piece_map_key(board.piece_map())
+        if state_key in self.description_cache:
+            return self.description_cache[state_key]
+
+        active_llm = Ollama(model=self.ollama_model_name, request_timeout=360.0, additional_kwargs=self.ollama_kwargs)
+        board_prompt = """You are playing chess. I will describe the positions of each piece on the board and the state of the game.
+        Output one sentence describing the most salient feature of the game state. Use the format 'SALIENT: <description>'
+        Output a newline character, then a sentence describing the part of the game that the WHITE piece player should focus on. Use the format 'WHITE-FOCUS: <description>'
+        Output a newline character, then a sentence describing the part of the game that the BLACK piece player should focus on. Use the format 'BLACK-FOCUS': <description>'"""
+        board_prompt_msg = ChatMessage(role=MessageRole.SYSTEM, content=board_prompt)
+
+        board_state_text = self.board_state_text(board)
         board_state_msg = ChatMessage(role=MessageRole.USER, content=board_state_text)
         # could also tell the LLM if either side has castled
 
@@ -107,6 +142,7 @@ class OllamaBoardStateConverter:
                     keyword_response.append(word)
         if len(keyword_response) > 0:
             keyword_responses[current_keyword] = " ".join(keyword_response)
+        self.description_cache[state_key] = keyword_responses
         return keyword_responses
 
 

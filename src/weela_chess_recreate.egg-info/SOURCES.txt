@@ -16,6 +16,7 @@ src/weela_chess/data_io/ollama_board_state_converter.py
 src/weela_chess/data_io/pgn_db_utils.py
 src/weela_chess/data_io/tf_record_utils.py
 src/weela_chess/datasets/__init__.py
+src/weela_chess/datasets/torch_dataloader_preloader.py
 src/weela_chess/datasets/torch_move_dataset_factory.py
 src/weela_chess_recreate.egg-info/PKG-INFO
 src/weela_chess_recreate.egg-info/SOURCES.txt

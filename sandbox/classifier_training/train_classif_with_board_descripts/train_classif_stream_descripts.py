@@ -2,7 +2,6 @@ import asyncio
 import os
 import shutil
 import time
-from functools import partial
 from pathlib import Path
 
 import torch
@@ -17,44 +16,17 @@ import numpy as np
 
 from torch_utils.torch_train_utils import pytorch_train, pytorch_test
 from weela_chess.chess_utils.all_possible_moves import all_uci_codes_to_moves, categorical_idx_to_uci_codes
-from weela_chess.chess_utils.stockfish_eval import PLAYER_FUNC, play_against_stockfish
 from weela_chess.data_io.pgn_db_utils import pgn_np_move_streamer, board_to_matrix
-from weela_chess.datasets.move_only_preloader import prepare_move_only_tensors
+from weela_chess.datasets.board_descript_preloader import prepare_move_descript_io_iter, board_descript_iter
 from weela_chess.datasets.torch_dataloader_preloader import TorchDataLoaderPreloader
-
-
-
-def predict_next_move(model: nn.Module, device: torch.device, board: Board, int_to_move: dict[int, list[str]]):
-    board_matrix = board_to_matrix(board).reshape(1, 8, 8, 12)
-    torch_board = torch.from_numpy(board_matrix).float().to(device)
-
-    predictions = model(torch_board)[0]
-    legal_moves = list(board.legal_moves)
-    legal_moves_uci = [move.uci() for move in legal_moves]
-    sorted_indices = torch.argsort(predictions, descending=True)
-    for move_index in sorted_indices:
-        possible_moves = int_to_move[int(move_index)]
-        for move in possible_moves:
-            if move in legal_moves_uci:
-                return move
-    return None
-
-
-def chess_model_player_func(model: nn.Module, device: torch.device) -> PLAYER_FUNC:
-    int_to_move = categorical_idx_to_uci_codes()
-
-    def play_move(board: Board) -> str:
-        my_move = predict_next_move(model, device, board, int_to_move)
-        return my_move
-
-    return play_move
-
+from weela_chess.models.board_descript_dnn_classif import ClassifDescNet
 
 N_DATASET_TRAINS = 1000
 
 if __name__ == '__main__':
     db_path = Path("/home/garrickw/rl_learning/weela_chess/data/Lichess Elite Database")
-    checkpoint_dir = Path("/home/garrickw/rl_learning/weela_chess/data/checkpoints/board_only_classif")
+    board_desc_path = Path("/home/garrickw/rl_learning/weela_chess/data/LichessEliteMixtralBoardDescripts")
+    checkpoint_dir = Path("/home/garrickw/rl_learning/weela_chess/data/checkpoints/mixtral_augment")
     if checkpoint_dir.exists():
         shutil.rmtree(checkpoint_dir)
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -65,24 +37,20 @@ if __name__ == '__main__':
         'pin_memory': True,
         'shuffle': False
     }
-
     raw_inputs = pgn_np_move_streamer(db_path)
-    tensor_inputs = prepare_move_only_tensors(raw_inputs)
-
-    dataset_generator = TorchDataLoaderPreloader(raw_input_iter=tensor_inputs, dataset_size=100, use_threads=True, **train_data_kwargs)
+    raw_input_iter = prepare_move_descript_io_iter(raw_inputs, board_descript_iter(board_desc_path), embed_model="BAAI/bge-small-en-v1.5")
+    dataset_generator = TorchDataLoaderPreloader(raw_input_iter=raw_input_iter, dataset_size=100, use_threads=True, **train_data_kwargs)
 
     torch.manual_seed(seed=42)
     device = torch.device("cuda")
-    model = Net().to(device)
+    model = ClassifDescNet().to(device)
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model has {num_params} params")
-
-    player_func = chess_model_player_func(model, device)
 
     optimizer = optim.Adadelta(model.parameters(), lr=1.0)
     scheduler = StepLR(optimizer, step_size=1, gamma=0.1)
 
-    patience = 30
+    patience = 10
     counter = 0
     best_model_state, best_loss_so_far = model.state_dict(), 9999999
 
@@ -112,6 +80,7 @@ if __name__ == '__main__':
 
     torch.save(best_model_state, checkpoint_dir / f"torch_chess_model_final.pt")
 
+    # player_func = chess_model_player_func(model, device)
     # # n_moves, i_won = asyncio.run(play_against_stockfish(player_func))
     # n_moves, i_won = loop.run_until_complete(play_against_stockfish(player_func))
     # if i_won:

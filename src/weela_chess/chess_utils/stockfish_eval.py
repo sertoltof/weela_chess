@@ -4,7 +4,7 @@ import sys
 # sys.path.append("../../")
 
 import os
-from typing import Callable, Iterable, AsyncIterable
+from typing import Callable, Iterable, AsyncIterable, AsyncGenerator, AsyncIterator
 
 import numpy as np
 from pathlib import Path
@@ -43,16 +43,16 @@ PLAYER_FUNC = Callable[[Board], str]
 # given a board, returns a ranked list of uci codes
 
 async def play_against_stockfish(player: PLAYER_FUNC) -> tuple[int, bool]:
-    play_iter = iter(play_against_stockfish_iter(player))
+    play_iter = play_against_stockfish_iter(player)
 
     move_num, winner = 0, None
     while True:
-        board = next(play_iter)
+        board = await anext(play_iter)
         if board.is_game_over():
             winner = "me"
             break
 
-        board = next(play_iter)
+        board = await anext(play_iter)
         if board.is_game_over():
             winner = "stockfish"
             break
@@ -60,7 +60,7 @@ async def play_against_stockfish(player: PLAYER_FUNC) -> tuple[int, bool]:
         move_num += 1
     return move_num, winner == "me"
 
-async def play_against_stockfish_iter(player: PLAYER_FUNC) -> Iterable[Board]:
+async def play_against_stockfish_iter(player: PLAYER_FUNC) -> AsyncIterator[Board]:
     transport, engine = await chess.engine.popen_uci("/home/garrickw/rl_learning/weela_chess/stockfish/stockfish/stockfish-ubuntu-x86-64-avx2")
     board = Board()
     limit = chess.engine.Limit(time=0.01)
@@ -80,7 +80,7 @@ async def play_against_stockfish_iter(player: PLAYER_FUNC) -> Iterable[Board]:
         if board.is_game_over():
             break
 
-async def play_stockfish_against_self() -> AsyncIterable[Board]:
+async def play_stockfish_against_self() -> AsyncIterator[Board]:
     transport, engine = await chess.engine.popen_uci("/home/garrickw/rl_learning/weela_chess/stockfish/stockfish/stockfish-ubuntu-x86-64-avx2")
     board = Board()
     limit = chess.engine.Limit(time=0.01)
@@ -101,6 +101,8 @@ async def play_stockfish_against_self() -> AsyncIterable[Board]:
             break
 
 async def main():
+
+
     # model = load_model(
     #     "/home/gerk/sts_after_images/weela_chess_recreate/src/weela_chess/nick_youtube_tute/chess_model.keras")
     transport, engine = await chess.engine.popen_uci(

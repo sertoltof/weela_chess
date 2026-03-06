@@ -9,10 +9,15 @@ from torch.utils.data import TensorDataset, DataLoader
 
 def pytorch_train(model: nn.Module, device: torch.device, train_loader: DataLoader, optimizer: Optimizer):
     model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
+    # todo change tuple to be variable length, for now all but last are inputs
+    for batch_idx, tensors in enumerate(train_loader):
+        data, target = tensors[:-1], tensors[-1]
+        datums = []
+        for datum in data:
+            datums.append(datum.to(device))
+        target = target.to(device)
         optimizer.zero_grad()
-        output = model(data)
+        output = model(*datums)
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
@@ -28,9 +33,14 @@ def pytorch_test(model: nn.Module, device: torch.device, test_loader: DataLoader
     correct = 0
     with torch.no_grad():
         n_elements = 0
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
-            output = model(data)
+        for tensors in test_loader:
+            data, target = tensors[:-1], tensors[-1]
+            datums = []
+            for datum in data:
+                datums.append(datum.to(device))
+            target = target.to(device)
+
+            output = model(*datums)
             test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
             n_elements += len(data)
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
