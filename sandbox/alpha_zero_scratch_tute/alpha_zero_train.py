@@ -1,7 +1,7 @@
 import numpy as np
 from tqdm import tqdm
 
-from sandbox.alpha_zero_scratch_tute.tic_tac_toe import TicTacToe
+from src.weela_chess.alphazero.tic_tac_toe.tic_tac_toe import TicTacToe
 from sandbox.alpha_zero_scratch_tute.ttt_policy_net import TTTResNet
 
 print(np.__version__)
@@ -10,7 +10,6 @@ print(np.__version__)
 import torch
 print(torch.__version__)
 
-import torch.nn as nn
 import torch.nn.functional as F
 
 torch.manual_seed(0)

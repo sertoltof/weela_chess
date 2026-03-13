@@ -3,13 +3,12 @@ name = "weela-chess-recreate"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "chess>=1.11.1",
     "jupyter>=1.1.1",
     "jupytext>=1.16.6",
     "more-itertools>=10.6.0",
-    "numpy==1.*",
     "pydantic>=2.10.6",
     "tqdm>=4.67.1",
     "lmdb>=1.6.2",

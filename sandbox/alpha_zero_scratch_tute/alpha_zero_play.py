@@ -2,7 +2,7 @@ import torch
 
 import numpy as np
 from sandbox.alpha_zero_scratch_tute.alpha_zero_train import AlphaZero
-from sandbox.alpha_zero_scratch_tute.tic_tac_toe import TicTacToe
+from src.weela_chess.alphazero.tic_tac_toe.tic_tac_toe import TicTacToe
 from sandbox.alpha_zero_scratch_tute.ttt_policy_net import TTTResNet
 
 if __name__ == '__main__':

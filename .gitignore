@@ -1,6 +1,7 @@
 .idea/
 **/data/
 
+**.egg-info/
 **stockfish/
 
 **.tar

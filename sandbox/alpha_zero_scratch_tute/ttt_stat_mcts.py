@@ -1,6 +1,6 @@
 import numpy as np
 
-from sandbox.alpha_zero_scratch_tute.tic_tac_toe import TicTacToe
+from src.weela_chess.alphazero.tic_tac_toe.tic_tac_toe import TicTacToe
 import math
 
 class Node:

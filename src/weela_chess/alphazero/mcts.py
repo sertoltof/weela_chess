@@ -12,16 +12,13 @@ import torch
 
 class MCTSStateMachine(ABC):
 
-    def __init__(self, start_state: NDArray):
-        self.state = start_state.copy()
-
     @abstractmethod
     @property
     def action_size(self) -> int:
         pass
 
     @abstractmethod
-    def valid_actions(self, state: NDArray) -> list[int] | NDArray:
+    def valid_actions(self) -> list[int] | NDArray[int]:
         pass
 
     @abstractmethod
@@ -29,13 +26,13 @@ class MCTSStateMachine(ABC):
         """Returns snapshot of the state after action is taken"""
         pass
 
-    @abstractmethod
-    def peek_action(self, action_idx: int) -> 'MCTSStateMachine':
-        """Returns snapshot of the state after action is taken. No internal state change"""
-        pass
+    # @abstractmethod
+    # def peek_action(self, action_idx: int) -> 'MCTSStateMachine':
+    #     """Returns snapshot of the state after action is taken. No internal state change"""
+    #     pass
 
     @abstractmethod
-    def get_value_given_state(self, given_state: 'MCTSStateMachine', value: float, base_state: 'MCTSStateMachine') -> float:
+    def get_value_given_state(self, given_state: 'MCTSStateMachine', value: float) -> float:
         """given state: state that is currently looking at the value.
         base_state: state that originally generated the value"""
         pass
@@ -107,19 +104,18 @@ class Node:
     def expand(self, policy: list[float]):
         for action, prob in enumerate(policy):
             if prob > 0.0:
-                # child_state = self.state.copy()
                 child_state = self.state_machine.take_action(action)
 
                 child = Node(self.config, self.state_machine, child_state, self, action, prob)
                 self.children.append(child)
 
     def backpropagate(self, value: float):
-        value = self.state_machine.get_value_for_state(self.state, value)
+        value = self.state_machine.get_value_given_state(self.state, value)
         self.value_sum += value
         self.visit_count += 1
 
         if self.parent is not None:
-            self.parent.backpropagate(value)
+            self.parent.backpropagate(self.state_machine.get_value_given_state(self.parent.state_machine, value))
 
 
 MCTSModel = Callable[[Tensor], tuple[list[float] | Tensor, float | Tensor]]
@@ -134,17 +130,17 @@ class MCTS:
         self.device = device
 
     @torch.no_grad()
-    def search(self, state: NDArray):
-        root = Node(self.config, self.state_machine, state, visit_count=1)
+    def search(self, state: MCTSStateMachine):
+        root = Node(self.config, state, visit_count=1)
 
         policy, _ = self.model(
-            torch.tensor(self.state_machine.get_encoded_state(state), device=self.device).unsqueeze(0)
+            torch.tensor(state.get_encoded_state(), device=self.device).unsqueeze(0)
         )
         policy = torch.softmax(policy, axis=1).squeeze(0).cpu().numpy()
         policy = (1 - self.config.dirichlet_epsilon) * policy
-        policy += self.config.dirichlet_epsilon * np.random.dirichlet([self.config.dirichlet_alpha] * self.state_machine.action_size)
+        policy += self.config.dirichlet_epsilon * np.random.dirichlet([self.config.dirichlet_alpha] * state.action_size)
 
-        valid_moves = self.state_machine.valid_actions(state)
+        valid_moves = state.valid_actions()
         policy *= valid_moves
         policy /= np.sum(policy)
         root.expand(policy)
