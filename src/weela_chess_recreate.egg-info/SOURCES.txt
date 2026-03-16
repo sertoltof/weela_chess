@@ -6,6 +6,7 @@ src/torch_utils/__init__.py
 src/torch_utils/torch_train_utils.py
 src/weela_chess/__init__.py
 src/weela_chess/alphazero/__init__.py
+src/weela_chess/alphazero/alpha_zero.py
 src/weela_chess/alphazero/mcts.py
 src/weela_chess/alphazero/tic_tac_toe/__init__.py
 src/weela_chess/alphazero/tic_tac_toe/tic_tac_toe.py

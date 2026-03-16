@@ -13,6 +13,10 @@ class TTTMctsStateMachine(MCTSStateMachine):
         self.game = game
         self.state = state
         self.whose_turn: int = whose_turn
+        """the player whose turn it is, looking at the given state"""
+
+        self.action_history: list[int] = []
+
         """1 for player 1, -1 for player 2"""
         if state is None:
             self.state = game.get_initial_state()
@@ -26,23 +30,31 @@ class TTTMctsStateMachine(MCTSStateMachine):
 
     def take_action(self, action_idx: int) -> 'MCTSStateMachine':
         """Returns snapshot of the state after action is taken"""
-        # todo finish implementing. I've decided that everything from the perspective of the state machine stays in the realm of
-        #  1s are player 1s moves, -1s are player 2s moves. But, in the encoded state, we need to prepare it in the way the model wants it to be,
-        #  that is the next move maker is 1 and -1 is opponent. Not sure how chess is going to work, maybe the turn is baked into the state somehow.
-        next_state = self.game.get_next_state(self.state, action_idx, 1)
-
-
+        next_state = self.game.get_next_state(self.state, action_idx, self.whose_turn)
+        next_state_machine = TTTMctsStateMachine(self.game, next_state, self.whose_turn * -1)
+        next_state_machine.action_history.append(action_idx)
+        return next_state_machine
 
     # def peek_action(self, action_idx: int) -> 'MCTSStateMachine':
     #     """Returns snapshot of the state after action is taken. No internal state change"""
     #     pass
 
-    def get_value_given_state(self, given_state: 'MCTSStateMachine', value: float) -> float:
+    def get_my_value_from_parents_perspective(self, parents_state: 'TTTMctsStateMachine', value: float) -> float:
         """given state: state that is currently looking at the value."""
-        pass
+        if parents_state == self.whose_turn:
+            return value
+        return -value
 
     def state_value(self) -> float:
-        pass
+        value, is_over = self.game.get_value_and_terminated(self.state, self.action_history[-1])
+        return value
+
+    def check_is_over(self) -> bool:
+        value, is_over = self.game.get_value_and_terminated(self.state, self.action_history[-1])
+        return is_over
 
     def get_encoded_state(self) -> Tensor:
-        pass
+        if self.whose_turn == 1:
+            return self.game.get_encoded_state(self.state)
+        else:
+            return self.game.get_encoded_state(-self.state)

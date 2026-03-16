@@ -12,8 +12,8 @@ import torch
 
 class MCTSStateMachine(ABC):
 
-    @abstractmethod
     @property
+    @abstractmethod
     def action_size(self) -> int:
         pass
 
@@ -32,13 +32,16 @@ class MCTSStateMachine(ABC):
     #     pass
 
     @abstractmethod
-    def get_value_given_state(self, given_state: 'MCTSStateMachine', value: float) -> float:
-        """given state: state that is currently looking at the value.
-        base_state: state that originally generated the value"""
+    def get_my_value_from_parents_perspective(self, parent: 'MCTSStateMachine', value: float) -> float:
+        """base_state: state that originally declared the value"""
         pass
 
     @abstractmethod
     def state_value(self) -> float:
+        pass
+
+    @abstractmethod
+    def check_is_over(self) -> bool:
         pass
 
     @abstractmethod
@@ -105,17 +108,18 @@ class Node:
         for action, prob in enumerate(policy):
             if prob > 0.0:
                 child_state = self.state_machine.take_action(action)
-
-                child = Node(self.config, self.state_machine, child_state, self, action, prob)
+                child = Node(self.config, child_state, self, action, prob)
                 self.children.append(child)
 
     def backpropagate(self, value: float):
-        value = self.state_machine.get_value_given_state(self.state, value)
+        # the value for the nodes is always the opposite of the state value, because when you look at the nodes, you're always looking
+        # from the perspective of the parent, i.e. the person that made the previous move.
+        value = self.state_machine.get_my_value_from_parents_perspective(self.parent.state_machine, value)
         self.value_sum += value
         self.visit_count += 1
 
         if self.parent is not None:
-            self.parent.backpropagate(self.state_machine.get_value_given_state(self.parent.state_machine, value))
+            self.parent.backpropagate(value)
 
 
 MCTSModel = Callable[[Tensor], tuple[list[float] | Tensor, float | Tensor]]
@@ -123,9 +127,9 @@ MCTSModel = Callable[[Tensor], tuple[list[float] | Tensor, float | Tensor]]
 
 
 class MCTS:
-    def __init__(self, config: MCTSConfig, state_machine: MCTSStateMachine, model: MCTSModel, device: torch.device):
+    def __init__(self, config: MCTSConfig, root_state_machine: MCTSStateMachine, model: MCTSModel, device: torch.device):
         self.config = config
-        self.state_machine = state_machine
+        self.state_machine = root_state_machine
         self.model = model
         self.device = device
 
@@ -151,15 +155,15 @@ class MCTS:
             while node.is_fully_expanded():
                 node = node.select()
 
-            value, is_terminal = self.game.get_value_and_terminated(node.state, node.action_taken)
-            value = self.game.get_opponent_value(value)
+            value = self.state_machine.state_value()
+            is_terminal = self.state_machine.check_is_over()
 
             if not is_terminal:
                 policy, value = self.model(
-                    torch.tensor(self.game.get_encoded_state(node.state), device=self.model.device).unsqueeze(0)
+                    torch.tensor(self.state_machine.get_encoded_state(), device=self.device).unsqueeze(0)
                 )
                 policy = torch.softmax(policy, axis=1).squeeze(0).cpu().numpy()
-                valid_moves = self.game.get_valid_moves(node.state)
+                valid_moves = self.state_machine.valid_actions()
                 policy *= valid_moves
                 policy /= np.sum(policy)
 
@@ -169,7 +173,7 @@ class MCTS:
 
             node.backpropagate(value)
 
-        action_probs = np.zeros(self.game.action_size)
+        action_probs = np.zeros(self.state_machine.action_size)
         for child in root.children:
             action_probs[child.action_taken] = child.visit_count
         action_probs /= np.sum(action_probs)
