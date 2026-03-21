@@ -1,3 +1,5 @@
+import pickle
+
 from numpy._typing import NDArray
 from pydantic import BaseModel
 from torch.nn import Module
@@ -23,7 +25,7 @@ class AlphaZeroTrainParams(BaseModel):
     """how much to repeat-train the same training memory in deep model"""
 
 
-class AlphaZero:
+class AlphaZeroTrainer:
     def __init__(self, model: Module, optimizer: Optimizer, root_state: MCTSStateMachine,
                  mcts: MCTS, train_params: AlphaZeroTrainParams,
                  device: torch.device):
@@ -35,25 +37,22 @@ class AlphaZero:
         self.train_params = train_params
         self.device = device
 
-    def next_move(self, game, state, embed_state) -> int:
-        action_probs, current_value = self.model(embed_state)
-        action_probs = action_probs.squeeze()
-        action_probs = torch.softmax(action_probs, axis=0)
-        valid_moves = game.get_valid_moves(state)
-        action_probs *= valid_moves
-        return int(np.argmax(action_probs))
-
-    def self_play(self):
+    # todo move to a ttt specific class
+    def rando_dummy_play(self):
         memory: list[tuple[MCTSStateMachine, NDArray]] = []
         state_machine = self.root_state
+        azero_player = np.random.choice([-1, 1])
 
         while True:
-            action_probs = self.mcts.search(state_machine)
-            memory.append((state_machine, action_probs))
+            if state_machine.whose_turn == azero_player:
+                action_probs = self.mcts.search(state_machine)
+                memory.append((state_machine, action_probs))
 
-            temperature_action_probs = action_probs ** (1 / self.train_params.temperature)
-            temperature_action_probs = temperature_action_probs / np.sum(temperature_action_probs)
-            action = np.random.choice(state_machine.action_size, p=temperature_action_probs)  # change to p=temperature_action_probs
+                temperature_action_probs = action_probs ** (1 / self.train_params.temperature)
+                temperature_action_probs = temperature_action_probs / np.sum(temperature_action_probs)
+                action = np.random.choice(self.root_state.action_size, p=temperature_action_probs)  # change to p=temperature_action_probs
+            else:
+                action = np.random.choice(state_machine.valid_actions())
 
             state_machine = state_machine.take_action(action)
             value = state_machine.state_value()
@@ -62,11 +61,44 @@ class AlphaZero:
             if is_terminal:
                 return_memory = []
                 for hist_state, hist_action_probs in memory:
-                    # hist_outcome = value if hist_player == player else self.game.get_opponent_value(value)
                     return_memory.append((
                         hist_state.get_encoded_state(),
                         hist_action_probs,
-                        hist_state.get_my_value_from_parents_perspective(hist_state, value)
+                        value
+                    ))
+                return return_memory
+
+    def self_play(self, num_searches: int, with_priors: bool = True) -> list[tuple[MCTSStateMachine, list[float] | NDArray, float]]:
+        memory: list[tuple[MCTSStateMachine, NDArray]] = []
+        state_machine = self.root_state
+        # todo move to a TTT specific class. Doing this so there are an equal number of player 2 and player 1 victories
+        state_machine.whose_turn = np.random.choice([-1, 1])
+
+        while True:
+            action_probs = self.mcts.search(state_machine, num_searches=num_searches,
+                                            no_priors=not with_priors)
+            memory.append((state_machine, action_probs))
+
+            temperature_action_probs = action_probs ** (1 / self.train_params.temperature)
+            temperature_action_probs = temperature_action_probs / np.sum(temperature_action_probs)
+            action = np.random.choice(self.root_state.action_size, p=temperature_action_probs)  # change to p=temperature_action_probs
+
+            state_machine = state_machine.take_action(action)
+            is_terminal = state_machine.check_is_over()
+
+            if is_terminal:
+                value = state_machine.state_value()
+                if value != 0:
+                    print(f"Winner: player {'1' if state_machine.whose_turn == -1 else '2'}")
+
+                # value of the player that made the winning move (not the player in the current state)
+                return_memory: list[tuple[MCTSStateMachine, list[float] | NDArray, float]] = []
+                for hist_state, hist_action_probs in memory:
+                    # value is absolute now, one player won, that's what that position should be predicted to lead towards
+                    return_memory.append((
+                        hist_state,
+                        hist_action_probs,
+                        value
                     ))
                 return return_memory
 
@@ -93,17 +125,50 @@ class AlphaZero:
             loss.backward()
             self.optimizer.step()  # change to self.optimizer
 
-    def learn(self):
-        for iteration in range(self.train_params.num_iterations):
-            memory = []
+    def learn(self, num_iterations: int, num_self_play_per_iter: int,
+              num_train_epochs_per_iter: int, num_mcts_searches: int,
+              with_priors: bool = True, first_iteration_num: int = 0):
+        iteration = first_iteration_num
+        for new_iteration in range(num_iterations):
+            full_memory: list[tuple[MCTSStateMachine, list[float], float]] = []
 
             self.model.eval()
-            for selfPlay_iteration in tqdm(range(self.train_params.num_self_play_before_train)):
-                memory += self.self_play()
+            for selfPlay_iteration in tqdm(range(num_self_play_per_iter)):
+                full_memory += self.self_play(with_priors=with_priors, num_searches=num_mcts_searches)
+                # if selfPlay_iteration % 5 == 0:
+                #     memory += self.rando_dummy_play(with_priors=with_priors)
 
+            train_memory = [(x[0].get_encoded_state(), x[1], x[2]) for x in full_memory]
             self.model.train()
-            for epoch in trange(self.train_params.num_train_epochs):
-                self.train(memory)
+            for epoch in trange(num_train_epochs_per_iter):
+                self.train(train_memory)
 
-            torch.save(self.model.state_dict(), f"model_{iteration}.pt")
-            torch.save(self.optimizer.state_dict(), f"optimizer_{iteration}.pt")
+            torch.save(self.model.state_dict(), f"model_{iteration + new_iteration}.pt")
+            torch.save(self.optimizer.state_dict(), f"optimizer_{iteration + new_iteration}.pt")
+            with open(f"memory_{iteration + new_iteration}.pkl", "wb") as f:
+                pickle.dump(full_memory, f)
+
+    def snapshot_training_state(self, version: int):
+        torch.save(self.model.state_dict(), f"model_{version}.pt")
+        torch.save(self.optimizer.state_dict(), f"optimizer_{version}.pt")
+
+
+class AlphaZeroPlayer:
+    def __init__(self, model: Module, root_state: MCTSStateMachine,
+                 mcts: MCTS, device: torch.device):
+        self.model = model
+        self.root_state = root_state
+
+        self.mcts = mcts
+        self.device = device
+
+    def make_next_move_with_search(self, from_state: MCTSStateMachine, num_searches: int) -> int:
+        action_probs = self.mcts.search(from_state, num_searches=num_searches,
+                                        is_eval=True)
+        action = int(np.argmax(action_probs))
+        return action
+
+    def make_next_move_model_only(self, from_state: MCTSStateMachine):
+        action_probs, _ = self.mcts.get_policy_and_val_preds(from_state)
+        action = int(np.argmax(action_probs))
+        return action

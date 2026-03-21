@@ -2,9 +2,9 @@ import numpy as np
 
 
 class TicTacToe:
-    def __init__(self):
-        self.row_count = 3
-        self.column_count = 3
+    def __init__(self, row_count: int = 3, column_count: int = 3):
+        self.row_count = row_count
+        self.column_count = column_count
         self.action_size = self.row_count * self.column_count
 
     def get_initial_state(self):
@@ -13,6 +13,7 @@ class TicTacToe:
     def get_next_state(self, state, action, player):
         row = action // self.column_count
         column = action % self.column_count
+        state = state.copy()
         state[row, column] = player
         return state
 

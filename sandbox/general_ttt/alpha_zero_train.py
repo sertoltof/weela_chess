@@ -1,9 +1,15 @@
+import cProfile
+import io
+import pstats
+from typing import Callable, Any
+
 import numpy as np
+import sys
 from tqdm import tqdm
 
 from src.weela_chess.alphazero.tic_tac_toe.tic_tac_toe import TicTacToe
 from sandbox.alpha_zero_scratch_tute.ttt_policy_net import TTTResNet
-from weela_chess.alphazero.alpha_zero import AlphaZero, AlphaZeroTrainParams
+from weela_chess.alphazero.alpha_zero import AlphaZeroTrainer, AlphaZeroTrainParams
 from weela_chess.alphazero.mcts import MCTSStateMachine, MCTS, MCTSConfig
 from weela_chess.alphazero.tic_tac_toe.ttt_mcts_state_machine import TTTMctsStateMachine
 
@@ -22,28 +28,28 @@ import torch.nn.functional as F
 
 torch.manual_seed(0)
 
+def profile_func_cumulative_time(func: Callable[[], Any]) -> str:
+    """Profile a function and all of the functions that were called within it using cprofile"""
+    pr = cProfile.Profile()
+    pr.enable()
+    func()
+    pr.disable()
+    stream = io.StringIO()
+    stats = pstats.Stats(pr, stream=stream).sort_stats("cumtime")
+    stats.print_stats()
+    return stream.getvalue()
+
+
 if __name__ == '__main__':
-    tictactoe = TicTacToe()
+    tictactoe = TicTacToe(row_count=5, column_count=5)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = TTTResNet(tictactoe, 4, 64, device)
+    model = TTTResNet(tictactoe, 4, 50, device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
 
-    # args = {
-    #     'C': 2,
-    #     'num_searches': 60,
-    #     'num_iterations': 3,
-    #     'num_selfPlay_iterations': 500,
-    #     'num_epochs': 4,
-    #     'batch_size': 64,
-    #     'temperature': 1.25,
-    #     'dirichlet_epsilon': 0.25,
-    #     'dirichlet_alpha': 0.3
-    # }
-
     mcts_config = MCTSConfig(
-        c=2,
+        c=2.5,
         num_searches=60,
 
         dirichlet_epsilon=0.25,
@@ -55,10 +61,20 @@ if __name__ == '__main__':
     train_params = AlphaZeroTrainParams(
         temperature=1.25,
         batch_size=64,
-        num_iterations=3,
-        num_self_play_before_train=50,
+        num_iterations=8,
+        num_self_play_before_train=10,
         num_train_epochs=4
     )
-    alphaZero = AlphaZero(model, optimizer, root_state,
-                          mcts, train_params, device)
-    alphaZero.learn()
+    alphaZero = AlphaZeroTrainer(model, optimizer, root_state,
+                                 mcts, train_params, device)
+
+    # def profile_naive():
+        # train the model initially with only MCTS searches
+    alphaZero.learn(num_iterations=3, num_self_play_per_iter=300, num_train_epochs_per_iter=4,
+                    with_priors=False, num_mcts_searches=100)
+    # print(profile_func_cumulative_time(profile_naive))
+    # sys.exit(0)
+
+    # then, train it using the model as the priors
+    alphaZero.learn(num_iterations=10, num_self_play_per_iter=100, num_train_epochs_per_iter=4,
+                    with_priors=True, first_iteration_num=3, num_mcts_searches=60)

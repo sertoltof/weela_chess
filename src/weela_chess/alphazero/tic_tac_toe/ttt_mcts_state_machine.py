@@ -23,9 +23,12 @@ class TTTMctsStateMachine(MCTSStateMachine):
 
     @property
     def action_size(self) -> int:
-        return int(np.count_nonzero(self.valid_actions()))
+        return len(self.valid_actions())
 
     def valid_actions(self) -> list[int] | NDArray:
+        return np.argwhere((self.state.reshape(-1) == 0)).flatten().astype(np.uint8)
+
+    def valid_action_mask(self) -> list[int] | NDArray[int]:
         return (self.state.reshape(-1) == 0).astype(np.uint8)
 
     def take_action(self, action_idx: int) -> 'MCTSStateMachine':
@@ -39,15 +42,40 @@ class TTTMctsStateMachine(MCTSStateMachine):
     #     """Returns snapshot of the state after action is taken. No internal state change"""
     #     pass
 
-    def get_my_value_from_parents_perspective(self, parents_state: 'TTTMctsStateMachine', value: float) -> float:
+    def get_my_value_from_parents_perspective(self, parents_state: 'TTTMctsStateMachine | None', value: float) -> float:
         """given state: state that is currently looking at the value."""
-        if parents_state == self.whose_turn:
+        if parents_state is None:
+            return -value
+        if parents_state.whose_turn == self.whose_turn:
             return value
         return -value
 
     def state_value(self) -> float:
         value, is_over = self.game.get_value_and_terminated(self.state, self.action_history[-1])
+        # player two made the previous move
+        if self.whose_turn == 1:
+            value *= -1
         return value
+
+    def naive_predicted_state_value(self) -> float:
+        # # you care about the state value from the perspective of the player that just made the move, not the player whose move it is
+        if self.check_is_over():
+            return self.state_value()
+        desired_direction = -self.whose_turn
+        state = self.state * desired_direction
+        row_sums = np.max(np.sum(state, axis=0))
+        col_sums = np.max(np.sum(state, axis=1))
+        diag_a_sums = np.max(np.diag(state))
+        diag_b_sums = np.max(np.diag(np.flip(state, axis=0)))
+        biggest_sum = np.max([row_sums, col_sums, diag_a_sums, diag_b_sums])
+        return biggest_sum / max([self.game.row_count, self.game.column_count])
+
+        # num_one_aways = 0
+        # for valid_action in experiment_state.valid_actions():
+        #     if_move_was_made = experiment_state.take_action(valid_action)
+        #     if if_move_was_made.check_is_over():
+        #         num_one_aways += 1
+        # return num_one_aways / (self.game.row_count * self.game.column_count)
 
     def check_is_over(self) -> bool:
         value, is_over = self.game.get_value_and_terminated(self.state, self.action_history[-1])
@@ -58,3 +86,6 @@ class TTTMctsStateMachine(MCTSStateMachine):
             return self.game.get_encoded_state(self.state)
         else:
             return self.game.get_encoded_state(-self.state)
+
+    def copy(self) -> 'TTTMctsStateMachine':
+        return TTTMctsStateMachine(self.game, self.state.copy(), self.whose_turn)

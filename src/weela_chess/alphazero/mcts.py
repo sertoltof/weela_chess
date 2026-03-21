@@ -22,6 +22,10 @@ class MCTSStateMachine(ABC):
         pass
 
     @abstractmethod
+    def valid_action_mask(self) -> list[int] | NDArray[int]:
+        pass
+
+    @abstractmethod
     def take_action(self, action_idx: int) -> 'MCTSStateMachine':
         """Returns snapshot of the state after action is taken"""
         pass
@@ -32,12 +36,17 @@ class MCTSStateMachine(ABC):
     #     pass
 
     @abstractmethod
-    def get_my_value_from_parents_perspective(self, parent: 'MCTSStateMachine', value: float) -> float:
+    def get_my_value_from_parents_perspective(self, parent: 'MCTSStateMachine | None', value: float) -> float:
         """base_state: state that originally declared the value"""
         pass
 
     @abstractmethod
     def state_value(self) -> float:
+        """Return the value of the state from the perspective of the player that moved INTO the state"""
+        pass
+
+    @abstractmethod
+    def naive_predicted_state_value(self) -> float:
         pass
 
     @abstractmethod
@@ -101,7 +110,7 @@ class Node:
         if child.visit_count == 0:
             q_value = 0
         else:
-            q_value = 1 - ((child.value_sum / child.visit_count) + 1) / 2
+            q_value = child.value_sum / child.visit_count
         return q_value + self.config.C * (math.sqrt(self.visit_count) / (child.visit_count + 1)) * child.prior
 
     def expand(self, policy: list[float]):
@@ -114,10 +123,11 @@ class Node:
     def backpropagate(self, value: float):
         # the value for the nodes is always the opposite of the state value, because when you look at the nodes, you're always looking
         # from the perspective of the parent, i.e. the person that made the previous move.
-        value = self.state_machine.get_my_value_from_parents_perspective(self.parent.state_machine, value)
+        parents_state = self.parent.state_machine if self.parent is not None else None
         self.value_sum += value
         self.visit_count += 1
 
+        value = self.state_machine.get_my_value_from_parents_perspective(parents_state, value)
         if self.parent is not None:
             self.parent.backpropagate(value)
 
@@ -129,52 +139,70 @@ MCTSModel = Callable[[Tensor], tuple[list[float] | Tensor, float | Tensor]]
 class MCTS:
     def __init__(self, config: MCTSConfig, root_state_machine: MCTSStateMachine, model: MCTSModel, device: torch.device):
         self.config = config
-        self.state_machine = root_state_machine
+        self.root_state_machine = root_state_machine
         self.model = model
         self.device = device
 
-    @torch.no_grad()
-    def search(self, state: MCTSStateMachine):
-        root = Node(self.config, state, visit_count=1)
+    @staticmethod
+    def filter_valid_actions(state: MCTSStateMachine, policy: list[float] | NDArray) -> list[float] | NDArray:
+        valid_moves = state.valid_action_mask()
+        policy *= valid_moves
+        policy /= np.sum(policy)
+        return policy
 
-        policy, _ = self.model(
+    @torch.no_grad()
+    def get_policy_and_val_preds(self, state: MCTSStateMachine, with_dirichlet: bool = False) -> tuple[list[float], float]:
+        policy, value = self.model(
             torch.tensor(state.get_encoded_state(), device=self.device).unsqueeze(0)
         )
         policy = torch.softmax(policy, axis=1).squeeze(0).cpu().numpy()
-        policy = (1 - self.config.dirichlet_epsilon) * policy
-        policy += self.config.dirichlet_epsilon * np.random.dirichlet([self.config.dirichlet_alpha] * state.action_size)
+        if with_dirichlet:
+            policy = (1 - self.config.dirichlet_epsilon) * policy
+            policy += self.config.dirichlet_epsilon * np.random.dirichlet([self.config.dirichlet_alpha] * self.root_state_machine.action_size)
+        policy = self.filter_valid_actions(state, policy)
 
-        valid_moves = state.valid_actions()
-        policy *= valid_moves
-        policy /= np.sum(policy)
+        return policy, value.item()
+
+    @torch.no_grad()
+    def search(self, state: MCTSStateMachine, num_searches: int,
+               no_priors: bool = False, is_eval: bool = False):
+        root = Node(self.config, state, visit_count=1)
+
+        if no_priors:
+            policy = [0.3 + (0.4 * np.random.random()) for _ in range(self.root_state_machine.action_size)]
+            policy = self.filter_valid_actions(state, policy)
+        else:
+            policy, _ = self.get_policy_and_val_preds(state, with_dirichlet=True if not is_eval else False)
         root.expand(policy)
 
-        for search in range(self.config.num_searches):
+        for search in range(num_searches):
             node = root
 
             while node.is_fully_expanded():
                 node = node.select()
 
-            value = self.state_machine.state_value()
-            is_terminal = self.state_machine.check_is_over()
+            if no_priors:
+                value = node.state_machine.naive_predicted_state_value()
+            else:
+                value = node.state_machine.state_value()
+                # value here is the player that moved INTO the state
+            is_terminal = node.state_machine.check_is_over()
 
             if not is_terminal:
-                policy, value = self.model(
-                    torch.tensor(self.state_machine.get_encoded_state(), device=self.device).unsqueeze(0)
-                )
-                policy = torch.softmax(policy, axis=1).squeeze(0).cpu().numpy()
-                valid_moves = self.state_machine.valid_actions()
-                policy *= valid_moves
-                policy /= np.sum(policy)
-
-                value = value.item()
-
+                if no_priors:
+                    policy = [0.3 + (0.4 * np.random.random()) for _ in range(self.root_state_machine.action_size)]
+                    policy = self.filter_valid_actions(node.state_machine, policy)
+                else:
+                    policy, value = self.get_policy_and_val_preds(node.state_machine)
+                    # make sure the model is trained so that it predicts of the value of the player that moved into the given state
                 node.expand(policy)
+            # else:
+            #     print("hit the end when searching")
 
             node.backpropagate(value)
 
-        action_probs = np.zeros(self.state_machine.action_size)
+        action_probs = np.zeros(self.root_state_machine.action_size)
         for child in root.children:
             action_probs[child.action_taken] = child.visit_count
-        action_probs /= np.sum(action_probs)
+        action_probs = self.filter_valid_actions(state, action_probs)
         return action_probs
