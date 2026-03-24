@@ -35,13 +35,17 @@ def load_pgn(file: Path) -> list[Game]:
     return games
 
 
-def board_to_matrix(board: Board) -> np.ndarray:
+def board_to_matrix(board: Board, from_whites_view: bool) -> np.ndarray:
     matrix = np.zeros((8, 8, 12))
+    white_piece_color, black_piece_color = 0, 6
+    if not from_whites_view:
+        board = board.mirror()
+        white_piece_color, black_piece_color = 6, 0
     piece_map = board.piece_map()
     for square, piece in piece_map.items():
         row, col = divmod(square, 8)
         piece_type = piece.piece_type - 1
-        piece_color = 0 if piece.color else 6
+        piece_color = white_piece_color if piece.color else black_piece_color
         matrix[row, col, piece_type + piece_color] = 1
     return matrix
 

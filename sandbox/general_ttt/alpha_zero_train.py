@@ -28,17 +28,21 @@ import torch.nn.functional as F
 
 torch.manual_seed(0)
 
-def profile_func_cumulative_time(func: Callable[[], Any]) -> str:
-    """Profile a function and all of the functions that were called within it using cprofile"""
-    pr = cProfile.Profile()
-    pr.enable()
-    func()
-    pr.disable()
-    stream = io.StringIO()
-    stats = pstats.Stats(pr, stream=stream).sort_stats("cumtime")
-    stats.print_stats()
-    return stream.getvalue()
+# def profile_func_cumulative_time(func: Callable[[], Any]) -> str:
+#     """Profile a function and all of the functions that were called within it using cprofile"""
+#     pr = cProfile.Profile()
+#     pr.enable()
+#     func()
+#     pr.disable()
+#     stream = io.StringIO()
+#     stats = pstats.Stats(pr, stream=stream).sort_stats("cumtime")
+#     stats.print_stats()
+#     return stream.getvalue()
 
+def build_ttt_root_state() -> TTTMctsStateMachine:
+    root_state = TTTMctsStateMachine(tictactoe)
+    root_state.whose_turn = np.random.choice([-1, 1])
+    return root_state
 
 if __name__ == '__main__':
     tictactoe = TicTacToe(row_count=5, column_count=5)
@@ -55,8 +59,8 @@ if __name__ == '__main__':
         dirichlet_epsilon=0.25,
         dirichlet_alpha=0.3
     )
-    root_state = TTTMctsStateMachine(tictactoe)
-    mcts = MCTS(mcts_config, root_state, model, device)
+    root_state_factory = build_ttt_root_state
+    mcts = MCTS(mcts_config, build_ttt_root_state().action_size, model, device)
 
     train_params = AlphaZeroTrainParams(
         temperature=1.25,
@@ -65,7 +69,7 @@ if __name__ == '__main__':
         num_self_play_before_train=10,
         num_train_epochs=4
     )
-    alphaZero = AlphaZeroTrainer(model, optimizer, root_state,
+    alphaZero = AlphaZeroTrainer(model, optimizer, root_state_factory,
                                  mcts, train_params, device)
 
     # def profile_naive():

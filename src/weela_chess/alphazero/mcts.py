@@ -137,9 +137,9 @@ MCTSModel = Callable[[Tensor], tuple[list[float] | Tensor, float | Tensor]]
 
 
 class MCTS:
-    def __init__(self, config: MCTSConfig, root_state_machine: MCTSStateMachine, model: MCTSModel, device: torch.device):
+    def __init__(self, config: MCTSConfig, state_machine_action_size: int, model: MCTSModel, device: torch.device):
         self.config = config
-        self.root_state_machine = root_state_machine
+        self.state_machine_action_size = state_machine_action_size
         self.model = model
         self.device = device
 
@@ -158,7 +158,7 @@ class MCTS:
         policy = torch.softmax(policy, axis=1).squeeze(0).cpu().numpy()
         if with_dirichlet:
             policy = (1 - self.config.dirichlet_epsilon) * policy
-            policy += self.config.dirichlet_epsilon * np.random.dirichlet([self.config.dirichlet_alpha] * self.root_state_machine.action_size)
+            policy += self.config.dirichlet_epsilon * np.random.dirichlet([self.config.dirichlet_alpha] * self.state_machine_action_size)
         policy = self.filter_valid_actions(state, policy)
 
         return policy, value.item()
@@ -169,7 +169,7 @@ class MCTS:
         root = Node(self.config, state, visit_count=1)
 
         if no_priors:
-            policy = [0.3 + (0.4 * np.random.random()) for _ in range(self.root_state_machine.action_size)]
+            policy = [0.3 + (0.4 * np.random.random()) for _ in range(self.state_machine_action_size)]
             policy = self.filter_valid_actions(state, policy)
         else:
             policy, _ = self.get_policy_and_val_preds(state, with_dirichlet=True if not is_eval else False)
@@ -190,7 +190,7 @@ class MCTS:
 
             if not is_terminal:
                 if no_priors:
-                    policy = [0.3 + (0.4 * np.random.random()) for _ in range(self.root_state_machine.action_size)]
+                    policy = [0.3 + (0.4 * np.random.random()) for _ in range(self.state_machine_action_size)]
                     policy = self.filter_valid_actions(node.state_machine, policy)
                 else:
                     policy, value = self.get_policy_and_val_preds(node.state_machine)
@@ -201,7 +201,7 @@ class MCTS:
 
             node.backpropagate(value)
 
-        action_probs = np.zeros(self.root_state_machine.action_size)
+        action_probs = np.zeros(self.state_machine_action_size)
         for child in root.children:
             action_probs[child.action_taken] = child.visit_count
         action_probs = self.filter_valid_actions(state, action_probs)

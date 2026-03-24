@@ -1,4 +1,5 @@
 import pickle
+from typing import Callable
 
 from numpy._typing import NDArray
 from pydantic import BaseModel
@@ -26,53 +27,21 @@ class AlphaZeroTrainParams(BaseModel):
 
 
 class AlphaZeroTrainer:
-    def __init__(self, model: Module, optimizer: Optimizer, root_state: MCTSStateMachine,
+    def __init__(self, model: Module, optimizer: Optimizer, root_state_factory: Callable[[], MCTSStateMachine],
                  mcts: MCTS, train_params: AlphaZeroTrainParams,
                  device: torch.device):
         self.model = model
         self.optimizer = optimizer
-        self.root_state = root_state
+        self.root_state_factory = root_state_factory
 
         self.mcts = mcts
         self.train_params = train_params
         self.device = device
 
-    # todo move to a ttt specific class
-    def rando_dummy_play(self):
-        memory: list[tuple[MCTSStateMachine, NDArray]] = []
-        state_machine = self.root_state
-        azero_player = np.random.choice([-1, 1])
-
-        while True:
-            if state_machine.whose_turn == azero_player:
-                action_probs = self.mcts.search(state_machine)
-                memory.append((state_machine, action_probs))
-
-                temperature_action_probs = action_probs ** (1 / self.train_params.temperature)
-                temperature_action_probs = temperature_action_probs / np.sum(temperature_action_probs)
-                action = np.random.choice(self.root_state.action_size, p=temperature_action_probs)  # change to p=temperature_action_probs
-            else:
-                action = np.random.choice(state_machine.valid_actions())
-
-            state_machine = state_machine.take_action(action)
-            value = state_machine.state_value()
-            is_terminal = state_machine.check_is_over()
-
-            if is_terminal:
-                return_memory = []
-                for hist_state, hist_action_probs in memory:
-                    return_memory.append((
-                        hist_state.get_encoded_state(),
-                        hist_action_probs,
-                        value
-                    ))
-                return return_memory
-
     def self_play(self, num_searches: int, with_priors: bool = True) -> list[tuple[MCTSStateMachine, list[float] | NDArray, float]]:
         memory: list[tuple[MCTSStateMachine, NDArray]] = []
-        state_machine = self.root_state
-        # todo move to a TTT specific class. Doing this so there are an equal number of player 2 and player 1 victories
-        state_machine.whose_turn = np.random.choice([-1, 1])
+        root_state = self.root_state_factory()
+        state_machine = root_state
 
         while True:
             action_probs = self.mcts.search(state_machine, num_searches=num_searches,
@@ -81,15 +50,13 @@ class AlphaZeroTrainer:
 
             temperature_action_probs = action_probs ** (1 / self.train_params.temperature)
             temperature_action_probs = temperature_action_probs / np.sum(temperature_action_probs)
-            action = np.random.choice(self.root_state.action_size, p=temperature_action_probs)  # change to p=temperature_action_probs
+            action = np.random.choice(root_state.action_size, p=temperature_action_probs)  # change to p=temperature_action_probs
 
             state_machine = state_machine.take_action(action)
             is_terminal = state_machine.check_is_over()
 
             if is_terminal:
                 value = state_machine.state_value()
-                if value != 0:
-                    print(f"Winner: player {'1' if state_machine.whose_turn == -1 else '2'}")
 
                 # value of the player that made the winning move (not the player in the current state)
                 return_memory: list[tuple[MCTSStateMachine, list[float] | NDArray, float]] = []
@@ -154,10 +121,9 @@ class AlphaZeroTrainer:
 
 
 class AlphaZeroPlayer:
-    def __init__(self, model: Module, root_state: MCTSStateMachine,
-                 mcts: MCTS, device: torch.device):
+    def __init__(self, model: Module, mcts: MCTS, device: torch.device):
         self.model = model
-        self.root_state = root_state
+        # self.root_state_factory = root_state_factory
 
         self.mcts = mcts
         self.device = device

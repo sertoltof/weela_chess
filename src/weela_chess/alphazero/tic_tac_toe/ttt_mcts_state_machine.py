@@ -70,13 +70,6 @@ class TTTMctsStateMachine(MCTSStateMachine):
         biggest_sum = np.max([row_sums, col_sums, diag_a_sums, diag_b_sums])
         return biggest_sum / max([self.game.row_count, self.game.column_count])
 
-        # num_one_aways = 0
-        # for valid_action in experiment_state.valid_actions():
-        #     if_move_was_made = experiment_state.take_action(valid_action)
-        #     if if_move_was_made.check_is_over():
-        #         num_one_aways += 1
-        # return num_one_aways / (self.game.row_count * self.game.column_count)
-
     def check_is_over(self) -> bool:
         value, is_over = self.game.get_value_and_terminated(self.state, self.action_history[-1])
         return is_over
