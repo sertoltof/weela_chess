@@ -1,5 +1,5 @@
 import numpy as np
-from chess import Board
+from chess import Board, WHITE
 from numpy.typing import NDArray
 
 from weela_chess.alphazero.tic_tac_toe.tic_tac_toe import TicTacToe
@@ -13,20 +13,16 @@ from weela_chess.data_io.convert_pgn_to_np import board_to_matrix
 
 class ChessMctsStateMachine(MCTSStateMachine):
 
-    def __init__(self, board: Board, state: NDArray | None = None, whose_turn: int = 1,
+    def __init__(self, board: Board = None,
                  action_history: list[int] = None):
+        if board is None:
+            board = Board()
         if action_history is None:
             action_history = []
         self.board = board
-        self.state = state
-        self.whose_turn: int = whose_turn
-        """the player whose turn it is, looking at the given state
-        1 is white, -1 is black."""
 
         self.action_history: list[int] = action_history
 
-        if state is None:
-            self.state = board_to_matrix(self.board, from_whites_view=whose_turn == 1)
         self.uci_to_action: dict[str, int] = all_uci_codes_to_categorical_idx()
         self.action_to_uci: dict[int, list[str]] = categorical_idx_to_uci_codes()
 
@@ -55,7 +51,7 @@ class ChessMctsStateMachine(MCTSStateMachine):
                 pass
         if not accepted_move:
             raise RuntimeError("Couldn't find a UCI that the board would accept")
-        next_state_machine = ChessMctsStateMachine(next_board, whose_turn=self.whose_turn * -1,
+        next_state_machine = ChessMctsStateMachine(next_board,
                                                    action_history=self.action_history + [action_idx])
         return next_state_machine
 
@@ -63,14 +59,15 @@ class ChessMctsStateMachine(MCTSStateMachine):
         """given state: state that is currently looking at the value."""
         if parents_state is None:
             return -value
-        if parents_state.whose_turn == self.whose_turn:
+        if parents_state.board.turn == self.board.turn:
             return value
         return -value
 
     def state_value(self) -> float:
         # either the last player made the winning move, or it's still mid-game
         if self.check_is_over():
-            return self.whose_turn * -1
+            # -1 (black) if it's white turn to move NOW (after the game is over)
+            return -1 if self.board.turn == WHITE else 1
         return 0
 
     def naive_predicted_state_value(self) -> float:
@@ -81,4 +78,27 @@ class ChessMctsStateMachine(MCTSStateMachine):
         return self.board.is_game_over()
 
     def get_encoded_state(self) -> Tensor:
-        return self.state
+        # https://chatgpt.com/c/69b88ca2-f4a0-8329-9e99-69cce3a62f23
+        # The full encoding is as follows:
+        #  Each time step has:
+        #   - 12 piece position planes
+        #   - 1 plane for "this position has occured 2 or more times (including this time)
+        #   - 1 plane for "this position has occured 3 or more times
+        # there are up to 7 previous board states included as well (8 total)
+        # 7 Global State Planes:
+        #   - 4 planes for: current player can castle (queen side, king side)
+        #   - 1 plane for the total moves (out of 100/200)
+        #   - 1 plane for number of moves since the last pawn move, or capture
+        #   - 1 plane for the side to move (white/black)
+
+        # Minimal Encoding:
+        #  board state/piece position
+        #  castle rights
+        #  side to move
+
+        piece_encoding = board_to_matrix(self.board, from_whites_view=self.board.turn)
+
+        if self.board.turn == WHITE:
+            return self.state
+        else:
+            return board_to_matrix(self.board, from_whites_view=False)
