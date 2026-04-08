@@ -21,4 +21,5 @@ Requires-Dist: llama-index>=0.13.0
 Requires-Dist: llama-index-embeddings-huggingface>=0.6.0
 Requires-Dist: llama-index-llms-ollama>=0.7.0
 Requires-Dist: llama-index-core>=0.13.0
+Requires-Dist: loguru>=0.7.3
 Dynamic: license-file

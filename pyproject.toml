@@ -21,6 +21,7 @@ dependencies = [
     "llama-index-embeddings-huggingface>=0.6.0",
     "llama-index-llms-ollama>=0.7.0",
     "llama-index-core>=0.13.0",
+    "loguru>=0.7.3",
 ]
 
 [build-system]

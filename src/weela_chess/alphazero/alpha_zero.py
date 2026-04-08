@@ -1,5 +1,6 @@
 import pickle
 from typing import Callable
+import loguru
 
 from numpy._typing import NDArray
 from pydantic import BaseModel
@@ -9,7 +10,8 @@ import torch
 import numpy as np
 from tqdm import tqdm, trange
 
-from weela_chess.alphazero.mcts import MCTSModel, MCTSStateMachine, MCTS
+from weela_chess.alphazero.mcts import MCTSModel, MCTS
+from weela_chess.alphazero.aux_mcts_interfaces import MCTSStateMachine
 import torch.nn.functional as F
 import random
 
@@ -42,6 +44,7 @@ class AlphaZeroTrainer:
         memory: list[tuple[MCTSStateMachine, NDArray]] = []
         root_state = self.root_state_factory()
         state_machine = root_state
+        move_num = 0
 
         while True:
             action_probs = self.mcts.search(state_machine, num_searches=num_searches,
@@ -50,9 +53,12 @@ class AlphaZeroTrainer:
 
             temperature_action_probs = action_probs ** (1 / self.train_params.temperature)
             temperature_action_probs = temperature_action_probs / np.sum(temperature_action_probs)
-            action = np.random.choice(root_state.action_size, p=temperature_action_probs)  # change to p=temperature_action_probs
+            action = np.random.choice(root_state.full_policy_size, p=temperature_action_probs)  # change to p=temperature_action_probs
 
             state_machine = state_machine.take_action(action)
+            move_num += 1
+            # loguru.logger.info(f"On move #{move_num}")
+
             is_terminal = state_machine.check_is_over()
 
             if is_terminal:

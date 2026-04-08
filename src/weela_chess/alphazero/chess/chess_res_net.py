@@ -1,6 +1,15 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pydantic import BaseModel
+from weela_chess.chess_utils.all_possible_moves import categorical_idx_to_uci_codes
+
+
+class ChessResNetDNA(BaseModel):
+    num_blocks: int
+    num_channels: int
+
+    num_input_channels: int
 
 
 class ChessResBlock(nn.Module):
@@ -19,35 +28,38 @@ class ChessResBlock(nn.Module):
         x = F.relu(x)
         return x
 
+
 class ChessResNet(nn.Module):
-    def __init__(self, num_res_blocks: int, num_hidden: int, device: torch.device):
+    def __init__(self, genome: ChessResNetDNA, device: torch.device):
         super().__init__()
+        n_actions = len(categorical_idx_to_uci_codes())
+        num_blocks, num_channels, num_input_channels = tuple(genome.model_dump().values())
 
         self.device = device
         self.startBlock = nn.Sequential(
-            nn.Conv2d(3, num_hidden, kernel_size=3, padding=1),
-            nn.BatchNorm2d(num_hidden),
+            nn.Conv2d(num_input_channels, num_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(num_channels),
             nn.ReLU()
         )
 
         self.backBone = nn.ModuleList(
-            [TTTResBlock(num_hidden) for i in range(num_resBlocks)]
+            [ChessResBlock(num_channels) for i in range(num_blocks)]
         )
 
         self.policyHead = nn.Sequential(
-            nn.Conv2d(num_hidden, 32, kernel_size=3, padding=1),
+            nn.Conv2d(num_channels, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(32 * game.row_count * game.column_count, game.action_size)
+            nn.Linear(32 * 8 * 8, n_actions)
         )
 
         self.valueHead = nn.Sequential(
-            nn.Conv2d(num_hidden, 3, kernel_size=3, padding=1),
-            nn.BatchNorm2d(3),
+            nn.Conv2d(num_channels, num_input_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(num_input_channels),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(3 * game.row_count * game.column_count, 1),
+            nn.Linear(num_input_channels * 8 * 8, 1),
             nn.Tanh()
         )
 

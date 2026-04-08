@@ -86,7 +86,7 @@ class MCTS:
         )
         policy = torch.softmax(policy, axis=1).squeeze(0).cpu().numpy()
         policy = (1 - self.args['dirichlet_epsilon']) * policy + self.args['dirichlet_epsilon'] \
-                 * np.random.dirichlet([self.args['dirichlet_alpha']] * self.game.action_size)
+                 * np.random.dirichlet([self.args['dirichlet_alpha']] * self.game.num_valid_actions)
 
         valid_moves = self.game.get_valid_moves(state)
         policy *= valid_moves
@@ -117,7 +117,7 @@ class MCTS:
 
             node.backpropagate(value)
 
-        action_probs = np.zeros(self.game.action_size)
+        action_probs = np.zeros(self.game.num_valid_actions)
         for child in root.children:
             action_probs[child.action_taken] = child.visit_count
         action_probs /= np.sum(action_probs)

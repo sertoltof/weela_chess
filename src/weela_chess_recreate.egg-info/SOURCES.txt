@@ -8,6 +8,9 @@ src/weela_chess/__init__.py
 src/weela_chess/alphazero/__init__.py
 src/weela_chess/alphazero/alpha_zero.py
 src/weela_chess/alphazero/mcts.py
+src/weela_chess/alphazero/scratch_code.py
+src/weela_chess/alphazero/chess/__init__.py
+src/weela_chess/alphazero/chess/chess_mcts_state_machine.py
 src/weela_chess/alphazero/tic_tac_toe/__init__.py
 src/weela_chess/alphazero/tic_tac_toe/tic_tac_toe.py
 src/weela_chess/alphazero/tic_tac_toe/ttt_mcts_state_machine.py
